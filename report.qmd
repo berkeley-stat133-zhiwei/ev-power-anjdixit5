@@ -1,5 +1,5 @@
 ---
-title: "EV Power - Lab 4 Project Report"
+title: "EV Power - Lab 4 Project Report Anjali"
 format: typst
 ---
 
