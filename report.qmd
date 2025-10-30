@@ -5,30 +5,125 @@ format: typst
 
 # Example Solution 1
 
+
 ## **Part 0: libraries**
 
 ```{r}
-
+install.packages("tidyverse")
+library(tidyverse)
+library(readr)
+library(ggplot2) 
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: Which states have the highest share of renewable energy? Does that correlate with EV registrations? 
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+clean_names <- function(df) {
+  df |>
+    rename_with(~ .x |> 
+    str_to_lower() |>
+    str_replace_all("[^a-z0-9]+", "_") |>
+    str_replace_all("^_|_$", ""))
+}
+
+state_lookup <- tibble(
+  state_full = state.name,
+  abb = state.abb
+) |> 
+    add_row(state_full = "District Of Columbia", abb = "DC") |>
+    add_row(state_full = "United States", abb = "US")
+
+ev_use <- read.csv("data/ev-registrations-by-state-2023.csv") |>
+  clean_names() |>
+  slice(-(1:2)) |> #getting rid of blank/unnecessary rows
+  rename(
+    state = electric_vehicle_registrations_by_state_2023,
+    ev_count_2023 = x #renaming columns
+  ) |>
+    mutate(ev_count_2023 = str_extract(ev_count_2023, "\\d+\\.?\\d*") |> 
+    as.numeric()) #making all ev counts purely numeric
+head(ev_use) #double checking
+
+
+renew_use <- read.csv("data/renew-use-2023.csv") |>
+  clean_names() |>
+  left_join(state_lookup, by = c("state" = "abb")) |>
+  mutate(
+    state = coalesce(state_full, str_to_title(state)),  # convert abbreviations
+    renewable_use_2023 = readr::parse_number(renewable_use_2023)
+  ) |>
+  select(-state_full)
+renew_use_summary <- renew_use |>
+  group_by(state) |>
+  summarise(
+    total_renewable_2023 = sum(renewable_use_2023, na.rm = TRUE),
+    .groups = "drop"
+  )
+head(renew_use)
 
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+joined <- renew_use_summary |>
+  left_join(ev_use, by = "state") |>
+  filter(state != "United States")
 
+top_renew <- joined |>
+  arrange(desc(total_renewable_2023)) |>
+  slice_head(n = 10)
+
+cat("Top 10 States by Renewable Energy (2023):\n")
+print(top_renew[, c("state", "total_renewable_2023")])
+summary(joined)
+head(joined)
 ```
 
 ## **Part 4: Mapping Visualization**
 
-```{r}
+The datasets used include:
+- State renewable energy generation (kWh)
+- EV registration data (2023)
+After cleaning and joining these datasets, we computed total renewable energy per state and compared it to EV counts.
 
+```{r}
+library(ggplot2)
+
+ggplot(joined, aes(x = total_renewable_2023, y = ev_count_2023)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(
+    title = "Renewable Energy Use vs EV Registrations (2023)",
+    x = "Total Renewable Energy (kwh)",
+    y = "Number of Registered EVs"
+  ) +
+  theme_minimal()
+
+ggplot(top_renew, aes(x = reorder(state, total_renewable_2023), y = total_renewable_2023)) +
+  geom_col(fill = "light green") +
+  coord_flip() +
+  labs(
+    title = "Top 10 States by Renewable Energy Generation (2023)",
+    x = "State",
+    y = "Total Renewable Energy"
+  ) +
+  theme_minimal()
+
+ggplot(top_renew, aes(x = reorder(state, total_renewable_2023), y = total_renewable_2023)) +
+  geom_col(fill = "dark green") +
+  coord_flip() +
+  labs(
+    title = "Top 10 States by Renewable Energy Generation (2023)",
+    x = "State",
+    y = "Total Renewable Energy"
+  ) +
+  theme_minimal()
 ```
+
+## **Part 5: Interpretation**
+States with higher renewable generation (e.g., California, Texas) also tend to have more EVs, suggesting a positive relationship. However, this correlation is not perfect — some states with high renewable capacity have fewer EVs, possibly due to differences in policy or infrastructure.
